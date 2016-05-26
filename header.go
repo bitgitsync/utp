@@ -8,6 +8,7 @@ import (
 
 const (
 	extensionTypeSelectiveAck = 1
+	syncthingUTPMagic         = uint32(0x83840001)
 )
 
 type extensionField struct {
@@ -54,6 +55,12 @@ func unmarshalExtensions(_type byte, b []byte) (n int, ef []extensionField, err 
 var errInvalidHeader = errors.New("invalid header")
 
 func (h *header) Unmarshal(b []byte) (n int, err error) {
+	magic := binary.BigEndian.Uint32(b)
+	if magic != syncthingUTPMagic {
+		err = errInvalidHeader
+		return
+	}
+	b = b[4:]
 	h.Type = st(b[0] >> 4)
 	h.Version = int(b[0] & 0xf)
 	if h.Type > stMax || h.Version != 1 {
@@ -70,18 +77,20 @@ func (h *header) Unmarshal(b []byte) (n int, err error) {
 	h.WndSize = binary.BigEndian.Uint32(b[12:16])
 	h.SeqNr = binary.BigEndian.Uint16(b[16:18])
 	h.AckNr = binary.BigEndian.Uint16(b[18:20])
-	n += 20
+	n += 24
 	return
 }
 
 func (h *header) Marshal(p []byte) (n int) {
-	n = 20 + func() (ret int) {
+	n = 4 + 20 + func() (ret int) {
 		for _, ext := range h.Extensions {
 			ret += 2 + len(ext.Bytes)
 		}
 		return
 	}()
 	p = p[:n]
+	binary.BigEndian.PutUint32(p, syncthingUTPMagic)
+	p = p[4:]
 	p[0] = byte(h.Type<<4 | 1)
 	binary.BigEndian.PutUint16(p[2:4], h.ConnID)
 	binary.BigEndian.PutUint32(p[4:8], h.Timestamp)
